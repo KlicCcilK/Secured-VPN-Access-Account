@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AssignedAccessConfiguration
+    xmlns="http://schemas.microsoft.com/AssignedAccess/2017/config"
+    xmlns:rs5="http://schemas.microsoft.com/AssignedAccess/201810/config"
+    xmlns:v3="http://schemas.microsoft.com/AssignedAccess/2020/config"
+    xmlns:v5="http://schemas.microsoft.com/AssignedAccess/2022/config">
+  <Profiles>
+    <Profile Id="{9A2A490F-10F6-4764-974A-43B19E722C23}">
+      <AllAppsList>
+        <AllowedApps>
+          <App DesktopAppPath="%windir%\explorer.exe" />
+          <App DesktopAppPath="%ProgramFiles%\Fortinet\FortiClient\FortiClient.exe" />
+          <App DesktopAppPath="%ProgramFiles%\Fortinet\FortiClient\FortiTray.exe" />
+          <App DesktopAppPath="%ProgramFiles%\Fortinet\FortiClient\scheduler.exe" />
+          <App DesktopAppPath="%ProgramFiles%\Fortinet\FortiClient\FCConfig.exe" />
+          <App DesktopAppPath="%ProgramFiles%\Fortinet\FortiClient\FCHelper64.exe" />
+          <App DesktopAppPath="%ProgramFiles%\Fortinet\FortiClient\FortiElevate.exe" />
+          <App DesktopAppPath="%ProgramFiles%\Fortinet\FortiClient\FortiSSLVPNdaemon.exe" />
+          <App DesktopAppPath="%ProgramFiles%\Fortinet\FortiClient\FortiSSLVPNsys.exe" />
+          <App DesktopAppPath="%ProgramFiles%\Fortinet\FortiClient\FortiVPN.exe" />
+          <App DesktopAppPath="%ProgramFiles%\Fortinet\FortiClient\ipsec.exe" />
+          <App DesktopAppPath="%ProgramFiles%\Fortinet\FortiClient\FCAuth.exe" />
+          <App DesktopAppPath="%ProgramFiles%\Fortinet\FortiClient\FCCOMInt.exe" />
+          <App DesktopAppPath="%ProgramFiles%\Fortinet\FortiClient\FCDBLog.exe" />
+          <App DesktopAppPath="%ProgramFiles%\Fortinet\FortiClient\FortiClientConsole.exe" />
+          <App DesktopAppPath="%ProgramFiles%\Fortinet\FortiClient\AzureToken.exe" />
+        </AllowedApps>
+      </AllAppsList>
+      <rs5:FileExplorerNamespaceRestrictions />
+      <v5:StartPins><![CDATA[{
+        "pinnedList":[
+          {"desktopAppLink":"%ALLUSERSPROFILE%\\Microsoft\\Windows\\Start Menu\\Programs\\FortiClient\\FortiClient.lnk"}
+        ]
+      }]]></v5:StartPins>
+      <Taskbar ShowTaskbar="true" />
+    </Profile>
+  </Profiles>
+  <Configs>
+    <Config>
+      <Account>VPNaccess</Account>
+      <DefaultProfile Id="{9A2A490F-10F6-4764-974A-43B19E722C23}" />
+    </Config>
+  </Configs>
+</AssignedAccessConfiguration>

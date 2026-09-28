@@ -3,14 +3,14 @@ param(
     [string]$UserName = 'VPNaccess',
     [string]$GroupName = 'Restricted User Experience',
     [string]$Password,
-    [string]$PsToolsZip,
+    #[string]$PsToolsZip,
     [switch]$RemoveAssignedAccess
 )
 
 $ErrorActionPreference = 'Stop'
 $SourceDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$ToolsRoot = 'C:\Tools'
-$PsToolsDir = 'C:\Tools\PsTools'
+#$ToolsRoot = 'C:\Tools'
+#$PsToolsDir = 'C:\Tools\PsTools'
 $TempDir = 'C:\Temp'
 $LogPath = Join-Path $TempDir 'vpnaccess-install.log'
 $XmlDest = Join-Path $TempDir 'vpn-restricted-accounts.xml'
@@ -183,6 +183,7 @@ function Update-FortiClientStartPin {
     Write-Log "Start pin set to $($lnk.FullName)"
 }
 
+<#
 function Add-MachinePath {
     param([string]$Folder)
     $current = [Environment]::GetEnvironmentVariable('Path', 'Machine')
@@ -195,8 +196,9 @@ function Add-MachinePath {
     [Environment]::SetEnvironmentVariable('Path', $new, 'Machine')
     $env:Path = $new + ';' + $env:Path
     Write-Log "Added $Folder to system PATH"
-}
+} #>
 
+<#
 function Find-PsToolsZip {
     if ($PsToolsZip -and (Test-Path -LiteralPath $PsToolsZip)) {
         return (Resolve-Path -LiteralPath $PsToolsZip).Path
@@ -213,8 +215,9 @@ function Find-PsToolsZip {
         }
     }
     return $null
-}
+} #>
 
+<#
 function Install-PsTools {
     if (Test-Path -LiteralPath (Join-Path $PsToolsDir 'PsExec.exe')) {
         Write-Log "PsExec already present at $PsToolsDir"
@@ -235,7 +238,7 @@ function Install-PsTools {
     if (-not (Test-Path -LiteralPath (Join-Path $PsToolsDir 'PsExec.exe'))) {
         throw "Extracted PsTools zip, but PsExec.exe was not found in $PsToolsDir"
     }
-}
+} #>
 
 function Invoke-AsSystem {
     param([string]$ArgumentList)
@@ -268,7 +271,7 @@ function Invoke-AsSystem {
 
 # --- start ---
 New-Item -ItemType Directory -Path $TempDir -Force | Out-Null
-New-Item -ItemType Directory -Path $ToolsRoot -Force | Out-Null
+#New-Item -ItemType Directory -Path $ToolsRoot -Force | Out-Null
 Write-Log '=== VPN access installer started ==='
 Write-Log "Source directory: $SourceDir"
 
@@ -292,8 +295,8 @@ Write-Log "Copied XML and apply script to $TempDir"
 Write-Log "Assigned Access target account set to $UserName"
 Update-FortiClientStartPin -XmlPath $XmlDest
 
-Install-PsTools
-Add-MachinePath -Folder $PsToolsDir
+#Install-PsTools
+#Add-MachinePath -Folder $PsToolsDir
 
 if (Get-LocalUser -Name $UserName -ErrorAction SilentlyContinue) {
     Write-Log "User already exists: $UserName"
@@ -307,7 +310,7 @@ if (Get-LocalUser -Name $UserName -ErrorAction SilentlyContinue) {
         $secure = Read-Host -AsSecureString "Enter password for new local user $UserName"
     } else {
         $secure = ConvertTo-SecureString $Password -AsPlainText -Force
-    }
+    } 
 
     New-LocalUser -Name $UserName `
         -Password $secure `
@@ -340,6 +343,11 @@ $arg = if ($RemoveAssignedAccess) {
 $result = Invoke-AsSystem -ArgumentList $arg
 Write-Log "SYSTEM apply task result: $result"
 
+if ($result -ne 0) { Write-Log 'Scheduled task apply did not return 0.' 'WARN'
+                    Write-Log 'Exiting code 1'
+                    exit 1 }
+
+<#
 if ($result -ne 0) {
     Write-Log 'Scheduled task apply did not return 0. Trying PsExec fallback.' 'WARN'
     $psexec = Join-Path $PsToolsDir 'PsExec.exe'
@@ -360,7 +368,7 @@ if ($result -ne 0) {
     } else {
         throw "Assigned Access apply failed. See $LogPath and $TempDir\apply-assigned-access.log"
     }
-}
+} #>
 
 if (-not $RemoveAssignedAccess) {
     Unregister-ScheduledTask -TaskName 'VPNAccess-RemoveOutlook' -Confirm:$false -ErrorAction SilentlyContinue

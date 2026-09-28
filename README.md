@@ -28,7 +28,8 @@ Domain users on the same PC are not locked down. Microsoft 365 / classic Outlook
 - Windows 11
 - FortiClient already installed machine-wide (free client is fine)
 - Administrator rights to run the installer
-- [PsTools](https://learn.microsoft.com/en-us/sysinternals/downloads/pstools) (`PsTools.zip`)
+
+No extra tools are required. Assigned Access is applied as SYSTEM through a short-lived scheduled task. Sysinternals PsTools / PsExec is not used and is not a fallback.
 
 ## Package contents
 
@@ -38,18 +39,16 @@ Domain users on the same PC are not locked down. Microsoft 365 / classic Outlook
 | `Install-VpnAccess.ps1` | Creates the account and applies the lockdown |
 | `Apply-AssignedAccess.ps1` | Writes Assigned Access as SYSTEM |
 | `vpn-restricted-accounts.xml` | Restricted profile |
-| `README.md` | This file |
-
-Place `PsTools.zip` next to `install.cmd` before you deploy.
+| `README.md` / `README.txt` | This documentation |
+| `LICENSE.txt` | PolyForm Noncommercial License 1.0.0 |
 
 ## Install
 
 ```text
 1. Copy the folder to the target PC.
-2. Put PsTools.zip in that folder if it is not already there.
-3. Right-click install.cmd → Run as administrator.
-4. Enter the VPNaccess password when prompted.
-5. Sign VPNaccess out and back in once before testing.
+2. Right-click install.cmd → Run as administrator.
+3. Enter the VPNaccess password when prompted.
+4. Sign VPNaccess out and back in once before testing.
 ```
 
 Silent install:
@@ -68,12 +67,14 @@ install.cmd -RemoveAssignedAccess
 
 - Creates local user `VPNaccess` if it does not exist
 - Adds that user to `Users`
-- Stages files under `C:\Temp` and `C:\Tools\PsTools`
-- Adds `C:\Tools\PsTools` to the system PATH
+- Stages `vpn-restricted-accounts.xml` and `Apply-AssignedAccess.ps1` under `C:\Temp`
 - Detects the FortiClient Start Menu shortcut and pins it
-- Applies Assigned Access to `VPNaccess` as SYSTEM
+- Runs `Apply-AssignedAccess.ps1` as SYSTEM via scheduled task `VPNAccess-ApplyAssignedAccess`, then deletes that task
 - Sets machine policies that hide the Outlook (new) default pin
 - Sets per-user policies that hide tray / notification UI for `VPNaccess`
+- Registers scheduled task `VPNAccess-TrayLockdown` so the tray lockdown is reapplied at `VPNaccess` logon
+
+If the SYSTEM apply task does not return 0, the installer logs a warning and exits with code 1. There is no PsExec retry.
 
 ## Logs
 
@@ -95,3 +96,4 @@ Other VPN clients are not selected automatically. A later revision can detect an
 - Use the FortiClient tile on Start. The system tray is intentionally limited for this account.
 - The FortiClient full GUI can still crash under Assigned Access; the connect flow from the allowed binary is the supported path.
 - `DisableCloudOptimizedContent` is machine-wide. It only stops Windows from adding the inbox Outlook (new) pin on new profiles. It does not remove Office.
+- Fast user switching is left enabled so you can switch from `VPNaccess` to the domain account after the tunnel is up.

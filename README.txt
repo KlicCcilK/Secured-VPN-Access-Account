@@ -5,14 +5,11 @@ Contents
 - install.cmd                 Double-click this after unzipping
 - Install-VpnAccess.ps1       Main installer
 - Apply-AssignedAccess.ps1    Applies the Assigned Access XML as SYSTEM
-- vpn-restricted-accounts.xml Restricted profile for the local group
-- PsTools.zip                 YOU MUST ADD THIS before deploying
-                              Download from Microsoft Sysinternals PsTools
+- vpn-restricted-accounts.xml Restricted profile for the VPNaccess account
+- README.md / README.txt      Documentation
+- LICENSE.txt                 PolyForm Noncommercial License 1.0.0
 
-How to build the zip you send to devices
-1. Download PsTools.zip from Microsoft and drop it in this folder.
-2. Zip this whole folder.
-3. Copy the zip to the target PC.
+No extra downloads are required. PsTools / PsExec is not used.
 
 How to install
 1. Unzip the package on the target PC.
@@ -29,16 +26,25 @@ Remove Assigned Access only
 
 What the installer does
 - Creates local user VPNaccess if missing
-- Creates local group "Restricted User Experience" if missing
-- Adds VPNaccess to that group and to Users
-- Creates C:\Tools and C:\Temp
-- Extracts PsTools.zip to C:\Tools\PsTools
-- Adds C:\Tools\PsTools to the system PATH
+- Adds VPNaccess to Users
+- Creates C:\Temp if needed
 - Copies the XML and apply script to C:\Temp
-- Applies Assigned Access as SYSTEM
+- Applies Assigned Access as SYSTEM through scheduled task
+  VPNAccess-ApplyAssignedAccess, then removes that task
 - Hides the Outlook (new) taskbar pin
+- Applies tray / notification lockdown for VPNaccess
+- Registers scheduled task VPNAccess-TrayLockdown at VPNaccess logon
 - Does not AppLocker-deny OUTLOOK.EXE or deprovision Office
+- Does not install or extract PsTools
+
+If the SYSTEM apply task fails, the installer exits with code 1.
+There is no PsExec fallback.
 
 Logs
 - C:\Temp\vpnaccess-install.log
 - C:\Temp\apply-assigned-access.log
+
+Requirements
+- Windows 11
+- FortiClient already installed machine-wide
+- Administrator rights

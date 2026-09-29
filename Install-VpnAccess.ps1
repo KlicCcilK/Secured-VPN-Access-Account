@@ -328,12 +328,12 @@ if (-not $usersGroup) {
     Write-Log "Added $UserName to Users"
 }
 
-# add VPNaccess to Remote Desktop Users for testing
+<# add VPNaccess to Remote Desktop Users for testing
 $usersGroupRDP = Get-LocalGroupMember -Group 'Remote Desktop Users' -ErrorAction SilentlyContinue | Where-Object { $_.Name -like "*\$UserName" }
 if (-not $usersGroupRDP) {
     Add-LocalGroupMember -Group 'Remote Desktop Users' -Member $UserName
     Write-Log "Added $UserName to Remote Desktop Users: TURN OFF AFTER TESTING"
-}
+}#>
 
 $pol = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System'
 if (-not (Test-Path $pol)) {

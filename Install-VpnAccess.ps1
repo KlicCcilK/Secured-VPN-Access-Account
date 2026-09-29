@@ -3,14 +3,11 @@ param(
     [string]$UserName = 'VPNaccess',
     [string]$GroupName = 'Restricted User Experience',
     [string]$Password,
-    #[string]$PsToolsZip,
     [switch]$RemoveAssignedAccess
 )
 
 $ErrorActionPreference = 'Stop'
 $SourceDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-#$ToolsRoot = 'C:\Tools'
-#$PsToolsDir = 'C:\Tools\PsTools'
 $TempDir = 'C:\Temp'
 $LogPath = Join-Path $TempDir 'vpnaccess-install.log'
 $XmlDest = Join-Path $TempDir 'vpn-restricted-accounts.xml'
@@ -100,6 +97,33 @@ function Set-RegistryDword {
     New-ItemProperty -Path $Path -Name $Name -PropertyType DWord -Value $Value -Force | Out-Null
 }
 
+function Disable-OneDriveForUserHive {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$HiveRoot
+    )
+
+    # Per-user only. Do not write HKLM\...\DisableFileSyncNGSC or domain
+    # users on this PC lose OneDrive as well.
+    $oneDrivePol = "$HiveRoot\Software\Policies\Microsoft\Windows\OneDrive"
+    Set-RegistryDword -Path $oneDrivePol -Name 'DisableFileSync' -Value 1
+    Set-RegistryDword -Path $oneDrivePol -Name 'DisableFileSyncNGSC' -Value 1
+    Set-RegistryDword -Path $oneDrivePol -Name 'DisableMeteredNetworkFileSync' -Value 1
+    Set-RegistryDword -Path $oneDrivePol -Name 'PreventNetworkTrafficPreUserSignIn' -Value 1
+
+    $runKey = "$HiveRoot\Software\Microsoft\Windows\CurrentVersion\Run"
+    if (Test-Path $runKey) {
+        Remove-ItemProperty -Path $runKey -Name 'OneDrive' -Force -ErrorAction SilentlyContinue
+    }
+
+    $approved = "$HiveRoot\Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run"
+    if (-not (Test-Path $approved)) {
+        New-Item -Path $approved -Force | Out-Null
+    }
+    $disabled = [byte[]](0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+    New-ItemProperty -Path $approved -Name 'OneDrive' -PropertyType Binary -Value $disabled -Force | Out-Null
+}
+
 function Set-VpnAccessTrayLockdown {
     param([string]$HiveRoot)
 
@@ -115,6 +139,7 @@ function Set-VpnAccessTrayLockdown {
     Set-RegistryDword -Path "$HiveRoot\Software\Policies\Microsoft\Windows\CurrentVersion\PushNotifications" -Name 'NoToastApplicationNotification' -Value 1
     Set-RegistryDword -Path "$HiveRoot\Software\Policies\Microsoft\Windows Defender Security Center\Systray" -Name 'HideSystray' -Value 1
     Set-RegistryDword -Path "$HiveRoot\Software\Microsoft\Windows\CurrentVersion\Notifications\Settings" -Name 'NOC_GLOBAL_SETTING_TOASTS_ENABLED' -Value 0
+    Disable-OneDriveForUserHive -HiveRoot $HiveRoot
 }
 
 function Register-VpnAccessTrayLockdownTask {
@@ -126,6 +151,7 @@ function Register-VpnAccessTrayLockdownTask {
     $scriptPath = Join-Path $TempDir 'Lock-VpnAccessTray.ps1'
     $script = @"
 `$sid = '$UserSid'
+`$account = '$AccountName'
 `$root = "Registry::HKEY_USERS\`$sid"
 for (`$i = 0; `$i -lt 30; `$i++) {
     if (Test-Path "`$root\Software") { break }
@@ -149,6 +175,42 @@ Set-Dword "`$root\Software\Policies\Microsoft\Windows Defender Security Center\S
 Set-Dword "`$root\Software\Microsoft\Windows\CurrentVersion\Notifications\Settings" 'NOC_GLOBAL_SETTING_TOASTS_ENABLED' 0
 Set-Dword "`$root\SOFTWARE\Classes\Local Settings\Software\Microsoft\Windows\CurrentVersion\TrayNotify" 'SystemTrayChevronVisibility' 0
 Get-Process -Name SecurityHealthSystray -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+
+Set-Dword "`$root\Software\Policies\Microsoft\Windows\OneDrive" 'DisableFileSync' 1
+Set-Dword "`$root\Software\Policies\Microsoft\Windows\OneDrive" 'DisableFileSyncNGSC' 1
+Set-Dword "`$root\Software\Policies\Microsoft\Windows\OneDrive" 'DisableMeteredNetworkFileSync' 1
+Set-Dword "`$root\Software\Policies\Microsoft\Windows\OneDrive" 'PreventNetworkTrafficPreUserSignIn' 1
+Set-Dword "`$root\Software\Microsoft\Windows\CurrentVersion\PenWorkspace" 'PenWorkspaceButtonDesiredVisibility' 0
+`$run = "`$root\Software\Microsoft\Windows\CurrentVersion\Run"
+if (Test-Path `$run) {
+    Remove-ItemProperty -LiteralPath `$run -Name 'OneDrive' -Force -ErrorAction SilentlyContinue
+}
+`$approved = "`$root\Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run"
+if (-not (Test-Path `$approved)) { New-Item -Path `$approved -Force | Out-Null }
+`$disabled = [byte[]](0x03,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00)
+New-ItemProperty -Path `$approved -Name 'OneDrive' -PropertyType Binary -Value `$disabled -Force | Out-Null
+Get-ScheduledTask -ErrorAction SilentlyContinue |
+    Where-Object { `$_.TaskName -match 'OneDrive' -and (`$_.Principal.UserId -eq `$sid -or `$_.Principal.UserId -match [regex]::Escape(`$account)) } |
+    Disable-ScheduledTask -ErrorAction SilentlyContinue | Out-Null
+
+function Stop-UserProcess {
+    param([string[]]`$Names)
+    foreach (`$proc in Get-CimInstance Win32_Process -ErrorAction SilentlyContinue) {
+        if (`$Names -notcontains `$proc.Name) { continue }
+        try {
+            `$owner = Invoke-CimMethod -InputObject `$proc -MethodName GetOwner
+            if (`$owner.User -eq `$account) {
+                Stop-Process -Id `$proc.ProcessId -Force -ErrorAction SilentlyContinue
+            }
+        }
+        catch { }
+    }
+}
+`$deadline = (Get-Date).AddSeconds(90)
+do {
+    Stop-UserProcess -Names @('OneDrive.exe', 'OneDriveStandaloneUpdater.exe', 'FileCoAuth.exe')
+    Start-Sleep -Seconds 3
+} while ((Get-Date) -lt `$deadline)
 "@
     Set-Content -LiteralPath $scriptPath -Value $script -Encoding UTF8
 
@@ -183,63 +245,6 @@ function Update-FortiClientStartPin {
     Write-Log "Start pin set to $($lnk.FullName)"
 }
 
-<#
-function Add-MachinePath {
-    param([string]$Folder)
-    $current = [Environment]::GetEnvironmentVariable('Path', 'Machine')
-    $parts = $current -split ';' | Where-Object { $_ -and $_.Trim() }
-    if ($parts -contains $Folder) {
-        Write-Log "PATH already contains $Folder"
-        return
-    }
-    $new = ($parts + $Folder) -join ';'
-    [Environment]::SetEnvironmentVariable('Path', $new, 'Machine')
-    $env:Path = $new + ';' + $env:Path
-    Write-Log "Added $Folder to system PATH"
-} #>
-
-<#
-function Find-PsToolsZip {
-    if ($PsToolsZip -and (Test-Path -LiteralPath $PsToolsZip)) {
-        return (Resolve-Path -LiteralPath $PsToolsZip).Path
-    }
-    $candidates = @(
-        (Join-Path $SourceDir 'PsTools.zip'),
-        (Join-Path $SourceDir 'PSTools.zip'),
-        (Join-Path $TempDir 'PsTools.zip'),
-        (Join-Path $TempDir 'PSTools.zip')
-    )
-    foreach ($c in $candidates) {
-        if (Test-Path -LiteralPath $c) {
-            return (Resolve-Path -LiteralPath $c).Path
-        }
-    }
-    return $null
-} #>
-
-<#
-function Install-PsTools {
-    if (Test-Path -LiteralPath (Join-Path $PsToolsDir 'PsExec.exe')) {
-        Write-Log "PsExec already present at $PsToolsDir"
-        Unblock-File -Path (Join-Path $PsToolsDir '*.exe') -ErrorAction SilentlyContinue
-        return
-    }
-
-    $zip = Find-PsToolsZip
-    if (-not $zip) {
-        throw 'PsTools.zip was not found. Place it next to install.cmd or in C:\Temp.'
-    }
-
-    Write-Log "Extracting $zip to $PsToolsDir"
-    New-Item -ItemType Directory -Path $PsToolsDir -Force | Out-Null
-    Expand-Archive -LiteralPath $zip -DestinationPath $PsToolsDir -Force
-    Unblock-File -Path (Join-Path $PsToolsDir '*.exe') -ErrorAction SilentlyContinue
-
-    if (-not (Test-Path -LiteralPath (Join-Path $PsToolsDir 'PsExec.exe'))) {
-        throw "Extracted PsTools zip, but PsExec.exe was not found in $PsToolsDir"
-    }
-} #>
-
 function Invoke-AsSystem {
     param([string]$ArgumentList)
 
@@ -271,7 +276,6 @@ function Invoke-AsSystem {
 
 # --- start ---
 New-Item -ItemType Directory -Path $TempDir -Force | Out-Null
-#New-Item -ItemType Directory -Path $ToolsRoot -Force | Out-Null
 Write-Log '=== VPN access installer started ==='
 Write-Log "Source directory: $SourceDir"
 
@@ -295,9 +299,6 @@ Write-Log "Copied XML and apply script to $TempDir"
 Write-Log "Assigned Access target account set to $UserName"
 Update-FortiClientStartPin -XmlPath $XmlDest
 
-#Install-PsTools
-#Add-MachinePath -Folder $PsToolsDir
-
 if (Get-LocalUser -Name $UserName -ErrorAction SilentlyContinue) {
     Write-Log "User already exists: $UserName"
     if ($Password) {
@@ -310,7 +311,7 @@ if (Get-LocalUser -Name $UserName -ErrorAction SilentlyContinue) {
         $secure = Read-Host -AsSecureString "Enter password for new local user $UserName"
     } else {
         $secure = ConvertTo-SecureString $Password -AsPlainText -Force
-    } 
+    }
 
     New-LocalUser -Name $UserName `
         -Password $secure `
@@ -325,6 +326,13 @@ $usersGroup = Get-LocalGroupMember -Group 'Users' -ErrorAction SilentlyContinue 
 if (-not $usersGroup) {
     Add-LocalGroupMember -Group 'Users' -Member $UserName
     Write-Log "Added $UserName to Users"
+}
+
+# add VPNaccess to Remote Desktop Users for testing
+$usersGroupRDP = Get-LocalGroupMember -Group 'Remote Desktop Users' -ErrorAction SilentlyContinue | Where-Object { $_.Name -like "*\$UserName" }
+if (-not $usersGroupRDP) {
+    Add-LocalGroupMember -Group 'Remote Desktop Users' -Member $UserName
+    Write-Log "Added $UserName to Remote Desktop Users: TURN OFF AFTER TESTING"
 }
 
 $pol = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System'
@@ -343,32 +351,11 @@ $arg = if ($RemoveAssignedAccess) {
 $result = Invoke-AsSystem -ArgumentList $arg
 Write-Log "SYSTEM apply task result: $result"
 
-if ($result -ne 0) { Write-Log 'Scheduled task apply did not return 0.' 'WARN'
-                    Write-Log 'Exiting code 1'
-                    exit 1 }
-
-<#
 if ($result -ne 0) {
-    Write-Log 'Scheduled task apply did not return 0. Trying PsExec fallback.' 'WARN'
-    $psexec = Join-Path $PsToolsDir 'PsExec.exe'
-    if (Test-Path -LiteralPath $psexec) {
-        $pArgs = @(
-            '-accepteula', '-h', '-s',
-            "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe",
-            '-NoProfile', '-ExecutionPolicy', 'Bypass',
-            '-File', $ApplyDest,
-            '-XmlPath', $XmlDest
-        )
-        if ($RemoveAssignedAccess) { $pArgs += '-Remove' }
-        $proc = Start-Process -FilePath $psexec -ArgumentList $pArgs -Wait -PassThru -NoNewWindow
-        Write-Log "PsExec exit code: $($proc.ExitCode)"
-        if ($proc.ExitCode -ne 0) {
-            throw "Assigned Access apply failed. See $TempDir\apply-assigned-access.log"
-        }
-    } else {
-        throw "Assigned Access apply failed. See $LogPath and $TempDir\apply-assigned-access.log"
-    }
-} #>
+    Write-Log 'Scheduled task apply did not return 0.' 'WARN'
+    Write-Log 'Exiting code 1'
+    exit 1
+}
 
 if (-not $RemoveAssignedAccess) {
     Unregister-ScheduledTask -TaskName 'VPNAccess-RemoveOutlook' -Confirm:$false -ErrorAction SilentlyContinue
@@ -387,10 +374,10 @@ if (-not $RemoveAssignedAccess) {
         }
         if (Test-Path "$hiveRoot\Software") {
             Set-VpnAccessTrayLockdown -HiveRoot $hiveRoot
-            Write-Log "Applied tray lockdown to $UserName hive"
+            Write-Log "Applied tray lockdown and OneDrive suppression to $UserName hive"
         }
         else {
-            Write-Log 'VPNaccess hive not loaded yet; tray lockdown will apply at first logon' 'WARN'
+            Write-Log 'VPNaccess hive not loaded yet; tray lockdown and OneDrive suppression will apply at first logon' 'WARN'
         }
     }
     catch {

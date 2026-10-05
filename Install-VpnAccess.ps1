@@ -3,15 +3,17 @@ param(
     [string]$UserName = 'VPNaccess',
     [string]$GroupName = 'Restricted User Experience',
     [string]$Password,
-    [switch]$RemoveAssignedAccess
+    [switch]$RemoveAssignedAccess,
+    [Alias("t", "test")]
+    [switch]$testing
 )
 
 $ErrorActionPreference = 'Stop'
 $SourceDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $DestDir = 'C:\ProgramData\VPNaccess'
 $LogPath = Join-Path $DestDir 'vpnaccess-install.log'
-$XmlDest = Join-Path $DestDir 'vpn-restricted-accounts.xml'
-$ApplyDest = Join-Path $DestDir 'Apply-AssignedAccess.ps1'
+$XmlDest= Join-Path $DestDir 'vpn-restricted-accounts.xml'
+$ApplyDest= Join-Path $DestDir 'Apply-AssignedAccess.ps1'
 
 function Write-Log {
     param(
@@ -28,14 +30,17 @@ function Write-Log {
 }
 
 function Test-IsAdmin {
+    if ($testing) {Write-Log "Line: $((Get-PSCallStack)[0].ScriptLineNumber)" 'INFO'}
     $id = [Security.Principal.WindowsIdentity]::GetCurrent()
     $p = [Security.Principal.WindowsPrincipal]$id
+    if ($testing) {Write-Log "Line: $((Get-PSCallStack)[0].ScriptLineNumber)" 'INFO'}
     return $p.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 }
 
 function Hide-OutlookTaskbarPin {
     param([string]$AccountName)
 
+    if ($testing) {Write-Log "Line: $((Get-PSCallStack)[0].ScriptLineNumber)" 'INFO'}
     $explorerPol = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Explorer'
     if (-not (Test-Path $explorerPol)) {
         New-Item -Path $explorerPol -Force | Out-Null
@@ -86,15 +91,19 @@ function Hide-OutlookTaskbarPin {
             Start-Sleep -Seconds 1
             & reg.exe unload "HKU\$userSid" | Out-Null
         }
+        if ($testing) {Write-Log "Line: $((Get-PSCallStack)[0].ScriptLineNumber)" 'INFO'}
     }
 }
 
 function Set-RegistryDword {
     param([string]$Path, [string]$Name, [int]$Value)
+    
+    if ($testing) {Write-Log "Line: $((Get-PSCallStack)[0].ScriptLineNumber)" 'INFO'}
     if (-not (Test-Path $Path)) {
         New-Item -Path $Path -Force | Out-Null
     }
     New-ItemProperty -Path $Path -Name $Name -PropertyType DWord -Value $Value -Force | Out-Null
+    if ($testing) {Write-Log "Line: $((Get-PSCallStack)[0].ScriptLineNumber)" 'INFO'}
 }
 
 function Disable-OneDriveForUserHive {
@@ -102,6 +111,8 @@ function Disable-OneDriveForUserHive {
         [Parameter(Mandatory = $true)]
         [string]$HiveRoot
     )
+
+    if ($testing) {Write-Log "Line: $((Get-PSCallStack)[0].ScriptLineNumber)" 'INFO'}
 
     # Per-user only. Do not write HKLM\...\DisableFileSyncNGSC or domain
     # users on this PC lose OneDrive as well.
@@ -122,10 +133,14 @@ function Disable-OneDriveForUserHive {
     }
     $disabled = [byte[]](0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
     New-ItemProperty -Path $approved -Name 'OneDrive' -PropertyType Binary -Value $disabled -Force | Out-Null
+
+    if ($testing) {Write-Log "Line: $((Get-PSCallStack)[0].ScriptLineNumber)" 'INFO'}
 }
 
 function Set-VpnAccessTrayLockdown {
     param([string]$HiveRoot)
+
+    if ($testing) {Write-Log "Line: $((Get-PSCallStack)[0].ScriptLineNumber)" 'INFO'}
 
     Set-RegistryDword -Path "$HiveRoot\Software\Microsoft\Windows\CurrentVersion\Policies\Explorer" -Name 'NoTrayItemsDisplay' -Value 1
     Set-RegistryDword -Path "$HiveRoot\Software\Microsoft\Windows\CurrentVersion\Policies\Explorer" -Name 'HideSCAHealth' -Value 1
@@ -140,6 +155,8 @@ function Set-VpnAccessTrayLockdown {
     Set-RegistryDword -Path "$HiveRoot\Software\Policies\Microsoft\Windows Defender Security Center\Systray" -Name 'HideSystray' -Value 1
     Set-RegistryDword -Path "$HiveRoot\Software\Microsoft\Windows\CurrentVersion\Notifications\Settings" -Name 'NOC_GLOBAL_SETTING_TOASTS_ENABLED' -Value 0
     Disable-OneDriveForUserHive -HiveRoot $HiveRoot
+
+    if ($testing) {Write-Log "Line: $((Get-PSCallStack)[0].ScriptLineNumber)" 'INFO'}
 }
 
 function Register-VpnAccessTrayLockdownTask {
@@ -148,8 +165,8 @@ function Register-VpnAccessTrayLockdownTask {
         [string]$UserSid
     )
 
-    $scriptPath = Join-Path $Dest
-Dir 'Lock-VpnAccessTray.ps1'
+    if ($testing) {Write-Log "Line: $((Get-PSCallStack)[0].ScriptLineNumber)" 'INFO'}
+    $scriptPath = Join-Path $DestDir  'Lock-VpnAccessTray.ps1'
     $script = @"
 `$sid = '$UserSid'
 `$account = '$AccountName'
@@ -213,6 +230,8 @@ do {
     Start-Sleep -Seconds 3
 } while ((Get-Date) -lt `$deadline)
 "@
+
+    if ($testing) {Write-Log "Line: $((Get-PSCallStack)[0].ScriptLineNumber)" 'INFO'}
     Set-Content -LiteralPath $scriptPath -Value $script -Encoding UTF8
 
     $taskName = 'VPNAccess-TrayLockdown'
@@ -223,11 +242,13 @@ do {
     $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -MultipleInstances IgnoreNew
     Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Force | Out-Null
     Write-Log "Registered $taskName to hide the tray at $AccountName logon"
+    if ($testing) {Write-Log "Line: $((Get-PSCallStack)[0].ScriptLineNumber)" 'INFO'}
 }
 
 function Update-FortiClientStartPin {
     param([string]$XmlPath)
 
+    if ($testing) {Write-Log "Line: $((Get-PSCallStack)[0].ScriptLineNumber)" 'INFO'}
     $lnk = Get-ChildItem "$env:ProgramData\Microsoft\Windows\Start Menu\Programs" -Recurse -Filter '*Forti*.lnk' -ErrorAction SilentlyContinue |
         Select-Object -First 1
     if (-not $lnk) {
@@ -244,11 +265,13 @@ function Update-FortiClientStartPin {
     )
     Set-Content -LiteralPath $XmlPath -Value $updated -Encoding UTF8
     Write-Log "Start pin set to $($lnk.FullName)"
+    if ($testing) {Write-Log "Line: $((Get-PSCallStack)[0].ScriptLineNumber)" 'INFO'}
 }
 
 function Invoke-AsSystem {
     param([string]$ArgumentList)
 
+    if ($testing) {Write-Log "Line: $((Get-PSCallStack)[0].ScriptLineNumber)" 'INFO'}
     $taskName = 'VPNAccess-ApplyAssignedAccess'
     Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
 
@@ -272,10 +295,31 @@ function Invoke-AsSystem {
 
     $code = (Get-ScheduledTaskInfo -TaskName $taskName).LastTaskResult
     Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
+    if ($testing) {Write-Log "Line: $((Get-PSCallStack)[0].ScriptLineNumber)" 'INFO'}
     return $code
 }
 
+function Add-RemoteDesktopUsers {
+    <# Add VPNaccess to RDP Users group for testing only #>
+    Write-host "X^$*^$*X*$%&#&X*$*&@*&@#*&#*&XX*&*&#(@#(*R&F(&&(X(X(Y#&((@UE&))))))))"
+    Write-Log "Testing flag: $testing" 'INFO'
+    if ($testing) {
+        $usersGroupRDP = Get-LocalGroupMember -Group 'Remote Desktop Users' -ErrorAction SilentlyContinue | Where-Object { $_.Name -like "*\$UserName" }
+        if (-not $usersGroupRDP) {
+            Add-LocalGroupMember -Group 'Remote Desktop Users' -Member $UserName
+            Write-Log "Added $UserName to Remote Desktop Users: TURN OFF AFTER TESTING"
+        }
+    } else { 
+        $usersGroupRDP = Get-LocalGroupMember -Group 'Remote Desktop Users' -ErrorAction SilentlyContinue | Where-Object { $_.Name -like "*\$UserName" }
+        if ($usersGroupRDP) {
+            Remove-LocalGroupMember -Group 'Remote Desktop Users' -Member $UserName
+            Write-Log "Removed $UserName from Remote Desktop Users"
+        }
+    }
+}
+
 # --- start ---
+if ($testing) {Write-Log "Line: $((Get-PSCallStack)[0].ScriptLineNumber)" 'INFO'}
 New-Item -ItemType Directory -Path $DestDir -Force | Out-Null
 Write-Log '=== VPN access installer started ==='
 Write-Log "Source directory: $SourceDir"
@@ -291,6 +335,8 @@ foreach ($required in @($xmlSource, $applySource)) {
         throw "Missing package file: $required"
     }
 }
+
+if ($testing) {Write-Log "Line: $((Get-PSCallStack)[0].ScriptLineNumber)" 'INFO'}
 
 Copy-Item -LiteralPath $xmlSource -Destination $XmlDest -Force
 Copy-Item -LiteralPath $applySource -Destination $ApplyDest -Force
@@ -329,12 +375,11 @@ if (-not $usersGroup) {
     Write-Log "Added $UserName to Users"
 }
 
-<# add VPNaccess to Remote Desktop Users for testing
-$usersGroupRDP = Get-LocalGroupMember -Group 'Remote Desktop Users' -ErrorAction SilentlyContinue | Where-Object { $_.Name -like "*\$UserName" }
-if (-not $usersGroupRDP) {
-    Add-LocalGroupMember -Group 'Remote Desktop Users' -Member $UserName
-    Write-Log "Added $UserName to Remote Desktop Users: TURN OFF AFTER TESTING"
-}#>
+if ($testing) {Write-Log "Line: $((Get-PSCallStack)[0].ScriptLineNumber)" 'INFO'}
+
+Add-RemoteDesktopUsers
+
+if ($testing) {Write-Log "Line: $((Get-PSCallStack)[0].ScriptLineNumber)" 'INFO'}
 
 $pol = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System'
 if (-not (Test-Path $pol)) {
@@ -349,6 +394,8 @@ $arg = if ($RemoveAssignedAccess) {
     "-NoProfile -ExecutionPolicy Bypass -File `"$ApplyDest`" -XmlPath `"$XmlDest`""
 }
 
+if ($testing) {Write-Log "Line: $((Get-PSCallStack)[0].ScriptLineNumber)" 'INFO'}
+
 $result = Invoke-AsSystem -ArgumentList $arg
 Write-Log "SYSTEM apply task result: $result"
 
@@ -357,6 +404,8 @@ if ($result -ne 0) {
     Write-Log 'Exiting code 1'
     exit 1
 }
+
+if ($testing) {Write-Log "Line: $((Get-PSCallStack)[0].ScriptLineNumber)" 'INFO'}
 
 if (-not $RemoveAssignedAccess) {
     Unregister-ScheduledTask -TaskName 'VPNAccess-RemoveOutlook' -Confirm:$false -ErrorAction SilentlyContinue
@@ -394,6 +443,8 @@ if (-not $RemoveAssignedAccess) {
 
     Register-VpnAccessTrayLockdownTask -AccountName $UserName -UserSid $userSid
 }
+
+if ($testing) {Write-Log "Line: $((Get-PSCallStack)[0].ScriptLineNumber)" 'INFO'}
 
 Write-Log '=== Install completed ==='
 Write-Host ''

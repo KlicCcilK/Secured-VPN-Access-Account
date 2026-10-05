@@ -8,10 +8,10 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $SourceDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$TempDir = 'C:\Temp'
-$LogPath = Join-Path $TempDir 'vpnaccess-install.log'
-$XmlDest = Join-Path $TempDir 'vpn-restricted-accounts.xml'
-$ApplyDest = Join-Path $TempDir 'Apply-AssignedAccess.ps1'
+$DestDir = 'C:\ProgramData\VPNaccess'
+$LogPath = Join-Path $DestDir 'vpnaccess-install.log'
+$XmlDest = Join-Path $DestDir 'vpn-restricted-accounts.xml'
+$ApplyDest = Join-Path $DestDir 'Apply-AssignedAccess.ps1'
 
 function Write-Log {
     param(
@@ -148,7 +148,8 @@ function Register-VpnAccessTrayLockdownTask {
         [string]$UserSid
     )
 
-    $scriptPath = Join-Path $TempDir 'Lock-VpnAccessTray.ps1'
+    $scriptPath = Join-Path $Dest
+Dir 'Lock-VpnAccessTray.ps1'
     $script = @"
 `$sid = '$UserSid'
 `$account = '$AccountName'
@@ -275,7 +276,7 @@ function Invoke-AsSystem {
 }
 
 # --- start ---
-New-Item -ItemType Directory -Path $TempDir -Force | Out-Null
+New-Item -ItemType Directory -Path $DestDir -Force | Out-Null
 Write-Log '=== VPN access installer started ==='
 Write-Log "Source directory: $SourceDir"
 
@@ -293,7 +294,7 @@ foreach ($required in @($xmlSource, $applySource)) {
 
 Copy-Item -LiteralPath $xmlSource -Destination $XmlDest -Force
 Copy-Item -LiteralPath $applySource -Destination $ApplyDest -Force
-Write-Log "Copied XML and apply script to $TempDir"
+Write-Log "Copied XML and apply script to $DestDir"
 (Get-Content -LiteralPath $XmlDest -Raw -Encoding UTF8) -replace '<Account>[^<]+</Account>', "<Account>$UserName</Account>" |
     Set-Content -LiteralPath $XmlDest -Encoding UTF8
 Write-Log "Assigned Access target account set to $UserName"

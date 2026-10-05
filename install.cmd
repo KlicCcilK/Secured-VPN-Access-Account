@@ -25,10 +25,9 @@ set "RC=%ERRORLEVEL%"
 echo.
 if not "%RC%"=="0" (
   echo Install failed with exit code %RC%
-  echo See C:\Temp\vpnaccess-install.log
+  echo See C:\ProgramData\VPNaccess\vpnaccess-install.log
 ) else (
   echo Install finished.
 )
 echo.
-pause
 exit /b %RC%

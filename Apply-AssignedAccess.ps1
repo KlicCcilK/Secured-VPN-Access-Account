@@ -6,7 +6,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$logPath = 'C:\Temp\apply-assigned-access.log'
+$logPath = 'C:\ProgramData\VPNaccess\apply-assigned-access.log'
 
 function Write-Log {
     param([string]$Message)
